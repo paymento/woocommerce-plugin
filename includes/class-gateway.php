@@ -83,11 +83,18 @@ function paymento_custom_admin_js()
 
       <script type="text/javascript">
         jQuery(function($) {
-					var data = {};
+					var data = {
+						'Api-Key' :  '<?php echo $this->get_option('api_key') ?>',
+					};
 					var paymento_helth_check = document.getElementById("paymento_helth_check");
 					var req = $.get({
-						url : 'https://api.paymento.io/ping', 
+						url : '/wp-json/paymento/health', 
 						data,
+						headers: {
+							'Content-Type': 'application/json',
+							'Access-Control-Allow-Origin' : '*',
+							'Access-Control-Allow-Credentials': 'true'
+            },
 						error: function(XMLHttpRequest, textStatus, errorThrown){
 							paymento_helth_check.innerHTML = '<span style="padding:5px 10px; background-color:#f52f57; color:#fff;border-radius:5px;">Error</span>';
 						},
@@ -101,24 +108,29 @@ function paymento_custom_admin_js()
 
 					var paymento_merchant_name = document.getElementById("paymento_merchant_name");
 					var req2 = $.get({
-						url : 'https://api.paymento.io/ping/key-validate', 
+						url : '/wp-json/paymento/merchant', 
 						data,
 						headers: {
 							'Api-Key' :  '<?php echo $this->get_option('api_key') ?>',
+							'Content-Type': 'application/json',
             },
 						error: function(XMLHttpRequest, textStatus, errorThrown){
 							paymento_merchant_name.innerHTML = '<span style="padding:5px 10px; background-color:#f52f57; color:#fff;border-radius:5px;">Error</span>';
 						},
 						success:  function(response) {
-							if(response.success)
-								paymento_merchant_name.innerHTML = '<span style="padding:5px 10px; background-color:#83f28f;border-radius:5px;">' + response.name + '( ' + (response.isActive) ? 'active' : 'not active' + ' )' + '</span>';
+							console.log(response.body);
+							if(response.success == true){
+								var status = 'Not Active';
+							 if(response.body.isActive)
+								 status = 'Active';
+								 // paymento_merchant_name.innerHTML = '<span style="padding:5px 10px; background-color:#83f28f;border-radius:5px;">' + response.body.name + '( ' + (response.body.isActive) ? 'active' : 'not active' + ' )' + '</span>';
+								 paymento_merchant_name.innerHTML = '<span style="padding:5px 10px; background-color:#83f28f;border-radius:5px;">' + response.body.name  + ' (' + status  + ') </span>';
+							}
 							else
 								paymento_merchant_name.innerHTML = '<span style="padding:5px 10px; background-color:#f52f57;color:#fff;border-radius:5px;">Bad</span>';
 						}
 					});
-					
-					
-					
+			
 					var handle_description = (data) => {
 						var desc_to_change = document.getElementById("woocommerce_paymento_gateway_confirmation_description");
 						if(data == 0)
@@ -154,23 +166,82 @@ function custom_order_status( $order_statuses ) {
 
 	public static	function wk_register_custom_routes() {
 
+		register_rest_route( 'paymento', '/health', array(
+			'methods' => 'GET',
+			'callback' => array(__CLASS__,'wk_get_health_callback') ,
+			'permission_callback' => '__return_true'
+			) );
+			register_rest_route( 'paymento', '/merchant', array(
+				'methods' => 'GET',
+				'callback' => array(__CLASS__,'wk_get_merchant_callback') ,
+				'permission_callback' => '__return_true'
+				) );
 		register_rest_route( 'paymento', '/result', array(
 			'methods' => 'POST',
 			'callback' => array(__CLASS__,'wk_get_post_callback') ,
 			'permission_callback' => '__return_true'
 			) );
+
 	}
 	
+	public static function wk_get_health_callback ($request){
+		$args = array(
+			// Increase the timeout from the default of 5 to 10 seconds
+			'timeout'    => 10,
+		
+			// Overwrite the default: "WordPress/5.8;www.mysite.tld" header:
+			'user-agent' => 'My special WordPress installation',
+		
+			// Add a couple of custom HTTP headers
+			'headers'    => array(
+				 'X-Custom-Id' => 'ABC123',
+				 'X-Secret-Thing' => 'secret',
+			),
+		
+			// Skip validating the HTTP servers SSL cert;
+			'sslverify' => false,
+		);
+		
+		$response = wp_remote_get( 'https://api.paymento.io/v1/ping/', $args );
+		return new WP_REST_Response(json_decode($response['body']));
+	}
+
+	public static function wk_get_merchant_callback ($request){
+		
+		$headers = getallheaders();
+
+		$args = array(
+			// Add a couple of custom HTTP headers
+			'headers'    => array(
+				'Content-Type' => 'application/json',
+				 'Api-Key'  => $headers['Api-Key'],
+			),
+		
+			// Skip validating the HTTP servers SSL cert;
+			'sslverify' => false,
+		);
+		
+		$response = wp_remote_get( 'https://api.paymento.io/v1/ping/merchant/', $args );
+		return new WP_REST_Response(json_decode($response['body']));
+
+		// return new WP_REST_Response($request);
+	}
+
+
+
+
+
 	public static function wk_get_post_callback ($request){
 		$headers = getallheaders();
 		do_action( 'paymento_result_action', $request->get_json_params(), $headers);
 		return new WP_REST_Response('good');
 	}
+
 	
 	public function paymento_result_action_callback($result, $headers) {
 		//"{\"Token\":\"fe3024f2b7f64b24ad822bca22341e70\",\"PaymentId\":244,\"OrderId\":\"957\",\"OrderStatus\":3,\"AdditionalData\":[]}"
 
-		$this->update_option( 'debug', 'callback headers: ' . json_encode($headers));
+		// $this->update_option( 'debug', 'callback headers: ' . json_encode($headers));
 
 
 		if ( isset($result['OrderId']) ) {
@@ -413,6 +484,7 @@ function custom_order_status( $order_statuses ) {
 		if ( isset($_GET['wc_order']) ) {
 			$order_id = absint( $_GET['wc_order'] );
 		}
+		$confirmation_type = $this->get_option('confirmation');
 
 		if ( isset($order_id) && !empty($order_id) ) {
 			$order = wc_get_order($order_id);
@@ -421,34 +493,11 @@ function custom_order_status( $order_statuses ) {
 				// Get data from bank
 				$OrderId = isset($_REQUEST['OrderId']) ? $_REQUEST['OrderId'] : '';
 				$OrderStatus = isset($_REQUEST['status']) ? $_REQUEST['status'] : '';
+				$payment_token = get_post_meta( $order_id, 'paymento-payment-token', true );
 
-				if( $OrderStatus == 7 ) {
+				if( $OrderStatus == 7 && ( $confirmation_type == 1 ||  $confirmation_type == 2) ) {
 					// BOOM! Payment completed!
-					$payment_token = get_post_meta( $order_id, 'paymento-payment-token', true );
-
-					$payload = array(
-						'token' 	=> $payment_token,
-					);
-
-					$curl = curl_init();
-					curl_setopt($curl, CURLOPT_URL, 'https://api.paymento.io/v1/payment/verify');
-					curl_setopt($curl, CURLOPT_POSTFIELDS, json_encode($payload));
-					curl_setopt($curl, CURLOPT_HTTPHEADER, array(
-						'Content-Type: application/json',
-						'Api-Key:' . $this->get_option('api_key'))
-					);
-					curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-					curl_setopt($curl, CURLINFO_HEADER_OUT, true);
-					curl_setopt($curl, CURLOPT_POST, true);
-					
-					$curl_res = curl_exec($curl);
-					// $this->update_option( 'debug', 'token:' . $result);
-					$result = json_decode($curl_res,true);
-					
-
-					if($result["success"] && $result["body"]["token"] == $payment_token){
-		
-						wc_reduce_stock_levels($order_id);
+						// wc_reduce_stock_levels($order_id);
 						WC()->cart->empty_cart();
 						WC()->session->delete_session( 'paymento_order_id' );
 						$message = sprintf(
@@ -462,19 +511,26 @@ function custom_order_status( $order_statuses ) {
 						$successful_page = add_query_arg( 'wc_status', 'success', $this->get_return_url( $order ) );
 						wp_redirect( $successful_page );
 						exit();
-						
-					}else{
-			
+				}
+				elseif( $OrderStatus == 7 && $confirmation_type == 0 ) {
+					// BOOM! Payment completed!
+						// wc_reduce_stock_levels($order_id);
+						WC()->cart->empty_cart();
+						WC()->session->delete_session( 'paymento_order_id' );
 						$message = sprintf(
-							__('Payment Verification was unsuccessful. Tracking code: %s', 'paymento'),
+							__('Payment was successful %s token: %s', 'paymento'),
 							'<br />',
 							$payment_token
 						);
+						$order->add_payment_token($payment_token);
 						$order->add_order_note($message, 1);
-						wc_add_notice( __('Payment error:', 'paymento') . $message, 'error' );
-						wp_redirect(wc_get_checkout_url(), 301);
+						$order->payment_complete();
+						// $order->set_status( 'on-hold', 'Waiting for Gateway Confirmation' );
+
+						$order->update_status( 'on-hold' );
+						$successful_page = add_query_arg( 'wc_status', 'success', $this->get_return_url( $order ) );
+						wp_redirect( $successful_page );
 						exit();
-					}
 				} elseif( $OrderStatus == 3 ) {
 					// BOOM! Payment completed!
 						$message = sprintf(
@@ -488,7 +544,7 @@ function custom_order_status( $order_statuses ) {
 					// OOPS! Something wrong
 					$error_message =  "Paymento failed payment";
 					wc_add_notice( __('Payment error:', 'paymento') . $error_message, 'error' );
-					wp_redirect( wc_get_checkout_url() );
+					wp_redirect( wc_get_checkout_url() ,301);
 					exit();
 				}
 			}
@@ -521,25 +577,34 @@ function custom_order_status( $order_statuses ) {
 	}
 
 	public function filter_woocommerce_available_payment_gateways($available_gateways) {
-		if(!current_user_can( 'administrator' ) ){
-			unset( $available_gateways['paymento_gateway'] );
-		}
 		return $available_gateways;
 	}
 
 	public static function computeHexStringHmac($message, $hexStringKey)
 	{
-			if (empty($hexStringKey)) {
-					throw new \InvalidArgumentException('$hexStringKey cannot be null or empty');
+			if (empty($key)) {
+					throw new \InvalidArgumentException('$key cannot be null or empty');
 			}
 
 			if (empty($message)) {
 					throw new \InvalidArgumentException('$message cannot be null or empty');
 			}
 
-			// first byte is version byte
-			// Remove 0x and the version byte from key
-			$hexStringKey = substr($hexStringKey, 4);
+			$hexStringKey = "";
+
+			// Valid hex pattern including 0x prefix
+			if (preg_match("/^(0x)?[0-9A-Fa-f]*$/", $key)) {
+					$hexStringKey = $key;
+			} elseif (preg_match("/^[A-Za-z0-9+\/]*={0,2}$/", $key)) {
+					// Convert base64 to hex (assuming you have a function to handle this)
+					$hexStringKey = self::base64ToHex($key);
+			} else {
+					throw new \InvalidArgumentException("Key is not a valid hex string or base64 format.");
+			}
+
+			if (substr($hexStringKey, 0, 2) === "0x") {
+					$hexStringKey = substr($hexStringKey, 2);
+			}
 
 			// Convert hex string key to byte array
 			$keyBytes = [];
@@ -549,9 +614,10 @@ function custom_order_status( $order_statuses ) {
 
 			$messageBytes = utf8_encode($message);
 
-			$hmac = hash_hmac('sha256', $messageBytes, $keyBytes, true);
+			$hmac = hash_hmac('sha256', $messageBytes, pack('C*', ...$keyBytes), true);
 
 			return bin2hex($hmac);
+
 	}
 
 }
