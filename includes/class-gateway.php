@@ -222,7 +222,7 @@ function paymento_custom_admin_js()
 		);
 		
 		$response = wp_remote_get( 'https://api.paymento.io/v1/ping/merchant/', $args );
-		if($response['body']['body']['isActive']){
+		// if($response['body']['body']['isActive']){
 			$body = array(
 				"IPN_Url" =>  get_site_url() . "/wp-json/paymento/result",
 				"IPN_Method" => 1
@@ -240,7 +240,7 @@ function paymento_custom_admin_js()
 
 			$settings = wp_remote_post( 'https://api.paymento.io/v1/payment/settings/', $setting_args );
 			
-		}
+		// }
 		return new WP_REST_Response(json_decode($response['body']));
 
 		// return new WP_REST_Response($request);
