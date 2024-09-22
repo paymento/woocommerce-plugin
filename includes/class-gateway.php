@@ -50,7 +50,7 @@ class WC_PAYMENTO_Gateway extends WC_Payment_Gateway {
 		
 
 		// Actions
-		add_action('woocommerce_update_options_payment_gateways_'.$this->id, array($this, 'process_admin_options'));
+		add_action('woocommerce_update_options_payment_gateways_'.$this->id, array($this, 'process_admin_options'), 100, 0);
 		add_action('woocommerce_receipt_'.$this->id, array($this, 'send_to_bank'));
 		add_action('woocommerce_api_'.strtolower(get_class($this)), array($this, 'return_from_bank'));
 		add_filter('woocommerce_get_order_item_totals', array($this, 'show_transaction_in_order'), 10, 2 );
@@ -58,22 +58,22 @@ class WC_PAYMENTO_Gateway extends WC_Payment_Gateway {
 
 		add_action('wp_enqueue_scripts', array($this,'register_script'));
 		add_action('paymento_result_action', array($this,'paymento_result_action_callback'), 20, 2);
-		add_action( 'init', array($this,'register_shipped_order_status') );
-		add_filter( 'wc_order_statuses', array($this,'custom_order_status'));
+		// add_action( 'init', array($this,'register_shipped_order_status') );
+		// add_filter( 'wc_order_statuses', array($this,'custom_order_status'));
 
 		add_action('admin_footer',  array($this,'paymento_custom_admin_js'));
 	}
 
-	function register_shipped_order_status() {
-    register_post_status( 'wc-waiting-to-confirm', array(
-        'label'                     => 'Waiting To Confirm',
-        'public'                    => true,
-        'exclude_from_search'       => false,
-        'show_in_admin_all_list'    => true,
-        'show_in_admin_status_list' => true,
-        'label_count'               => _n_noop( 'Waiting To Confirm <span class="count">(%s)</span>', 'Waiting To Confirm <span class="count">(%s)</span>' )
-    ) );
-}
+// 	function register_shipped_order_status() {
+//     register_post_status( 'wc-waiting-to-confirm', array(
+//         'label'                     => 'Waiting To Confirm',
+//         'public'                    => true,
+//         'exclude_from_search'       => false,
+//         'show_in_admin_all_list'    => true,
+//         'show_in_admin_status_list' => true,
+//         'label_count'               => _n_noop( 'Waiting To Confirm <span class="count">(%s)</span>', 'Waiting To Confirm <span class="count">(%s)</span>' )
+//     ) );
+// }
 
 function paymento_custom_admin_js()
 {
@@ -118,7 +118,7 @@ function paymento_custom_admin_js()
 							paymento_merchant_name.innerHTML = '<span style="padding:5px 10px; background-color:#f52f57; color:#fff;border-radius:5px;">Error</span>';
 						},
 						success:  function(response) {
-							console.log(response.body);
+							console.log(response);
 							if(response.success == true){
 								var status = 'Not Active';
 							 if(response.body.isActive)
@@ -159,10 +159,10 @@ function paymento_custom_admin_js()
     <?php
 }
 
-function custom_order_status( $order_statuses ) {
-    $order_statuses['wc-waiting-to-confirm'] = _x( 'Waiting To Confirm', 'Order status', 'woocommerce' ); 
-    return $order_statuses;
-}
+// function custom_order_status( $order_statuses ) {
+//     $order_statuses['wc-waiting-to-confirm'] = _x( 'Waiting To Confirm', 'Order status', 'woocommerce' ); 
+//     return $order_statuses;
+// }
 
 	public static	function wk_register_custom_routes() {
 
@@ -222,14 +222,29 @@ function custom_order_status( $order_statuses ) {
 		);
 		
 		$response = wp_remote_get( 'https://api.paymento.io/v1/ping/merchant/', $args );
+		if($response['body']['body']['isActive']){
+			$body = array(
+				"IPN_Url" =>  get_site_url() . "/wp-json/paymento/result",
+				"IPN_Method" => 1
+			);
+			$setting_args = array(
+				'headers'    => array(
+				'Content-Type' => 'application/json',
+				 'Api-Key'  => $headers['Api-Key'],
+				),
+				'body' => json_encode($body),
+			
+				// Skip validating the HTTP servers SSL cert;
+				'sslverify' => false,
+			);
+
+			$settings = wp_remote_post( 'https://api.paymento.io/v1/payment/settings/', $setting_args );
+			
+		}
 		return new WP_REST_Response(json_decode($response['body']));
 
 		// return new WP_REST_Response($request);
 	}
-
-
-
-
 
 	public static function wk_get_post_callback ($request){
 		$headers = getallheaders();
@@ -241,7 +256,6 @@ function custom_order_status( $order_statuses ) {
 	public function paymento_result_action_callback($result, $headers) {
 		//"{\"Token\":\"fe3024f2b7f64b24ad822bca22341e70\",\"PaymentId\":244,\"OrderId\":\"957\",\"OrderStatus\":3,\"AdditionalData\":[]}"
 
-		// $this->update_option( 'debug', 'callback headers: ' . json_encode($headers));
 
 
 		if ( isset($result['OrderId']) ) {
@@ -257,6 +271,7 @@ function custom_order_status( $order_statuses ) {
 				
 				if( $OrderStatus == 7 ) {
 					// BOOM! Payment completed!
+					// $this->update_option( 'debug', '7' . json_encode($result));
 
 					$payment_token = get_post_meta( $order_id, 'paymento-payment-token', true );
 
@@ -282,13 +297,14 @@ function custom_order_status( $order_statuses ) {
 						// $this->update_option( 'debug', 'verify result: true' . $order_id);
 						wc_reduce_stock_levels($order_id);
 						$message = sprintf(
-							__('Payment was successful %s token: %s', 'paymento'),
+							__('call: Payment was successful %s token: %s', 'paymento'),
 							'<br />',
 							$payment_token
 							);
 						$order->add_order_note($message, 1);
 						$order->add_payment_token($payment_token);
-		
+						$order->update_status( 'processing' );
+
 						$order->payment_complete();
 						return new WP_REST_Response('good');
  
@@ -332,7 +348,7 @@ function custom_order_status( $order_statuses ) {
 			'enabled' => array(
 				'title' => __('Enable/Disable', 'paymento'),
 				'type' => 'checkbox',
-				'label' => __('Enable paymento Payments', 'paymento'),
+				'label' => __('Enable Paymento Payments', 'paymento'),
 				'default' => 'yes',
 			),
 			'status' => array(
@@ -360,12 +376,12 @@ function custom_order_status( $order_statuses ) {
 				'desc_tip' => true,
 			),
 			'api_key' => array(
-				'title' => __('api_key', 'paymento'),
+				'title' => __('API Key', 'paymento'),
 				'type' => 'text',
 				'description' => __('merchant access token', 'paymento'),
 			),
 			'secret_key' => array(
-				'title' => __('secret_key', 'paymento'),
+				'title' => __('Secret Key', 'paymento'),
 				'type' => 'text',
 				'description' => __('merchant secret key', 'paymento'),
 			),
@@ -380,7 +396,7 @@ function custom_order_status( $order_statuses ) {
 			// 	'default' => '0'
 			// ),
 			'confirmation' => array(
-				'title' => __('confirmation type', 'paymento'),
+				'title' => __('Confirmation Type', 'paymento'),
 				// 'description' => __('merchant confirmation type', 'paymento'),
 				'type' => 'select',
 				'options' => array(
@@ -488,7 +504,7 @@ function custom_order_status( $order_statuses ) {
 
 		if ( isset($order_id) && !empty($order_id) ) {
 			$order = wc_get_order($order_id);
-			if ($order->get_status() !== 'completed') {
+			if ($order->get_status() !== 'completed' && $order->get_status() !== 'processing') {
 
 				// Get data from bank
 				$OrderId = isset($_REQUEST['OrderId']) ? $_REQUEST['OrderId'] : '';
@@ -501,7 +517,7 @@ function custom_order_status( $order_statuses ) {
 						WC()->cart->empty_cart();
 						WC()->session->delete_session( 'paymento_order_id' );
 						$message = sprintf(
-							__('Payment was successful %s token: %s', 'paymento'),
+							__('rfb: Payment was successful %s token: %s', 'paymento'),
 							'<br />',
 							$payment_token
 						);
@@ -518,7 +534,7 @@ function custom_order_status( $order_statuses ) {
 						WC()->cart->empty_cart();
 						WC()->session->delete_session( 'paymento_order_id' );
 						$message = sprintf(
-							__('Payment was successful %s token: %s', 'paymento'),
+							__('rfb: Payment was successful %s token: %s', 'paymento'),
 							'<br />',
 							$payment_token
 						);
@@ -534,7 +550,7 @@ function custom_order_status( $order_statuses ) {
 				} elseif( $OrderStatus == 3 ) {
 					// BOOM! Payment completed!
 						$message = sprintf(
-							__('Payment Waiting To Confirm', 'paymento'));
+							__('rfb: Payment Waiting To Confirm', 'paymento'));
 						$order->add_payment_token($payment_token);
 						$order->add_order_note($message, 1);
 						$successful_page = add_query_arg( 'wc_status', 'success', $this->get_return_url( $order ) );
@@ -542,11 +558,15 @@ function custom_order_status( $order_statuses ) {
 						exit();	
 				} else {
 					// OOPS! Something wrong
-					$error_message =  "Paymento failed payment";
+					$error_message =  "rfb: Paymento failed payment";
 					wc_add_notice( __('Payment error:', 'paymento') . $error_message, 'error' );
 					wp_redirect( wc_get_checkout_url() ,301);
 					exit();
 				}
+			}else if($order->get_status() == 'completed' || $order->get_status() == 'processing'){
+				$successful_page = add_query_arg( 'wc_status', 'success', $this->get_return_url( $order ) );
+				wp_redirect( $successful_page );
+				exit();
 			}
 		}
 	}
