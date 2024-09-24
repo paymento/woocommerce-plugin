@@ -1,11 +1,5 @@
 <?php
 
-/**
- * Created by PhpStorm.
- * User: Ali Azarmi
- * Date: 6/18/17
- * Time: 7:02 PM
- */
 if (!class_exists('WC_Payment_Gateway')) {
 	return;
 }
@@ -30,10 +24,10 @@ class WC_PAYMENTO_Gateway extends WC_Payment_Gateway {
   	//              wp_enqueue_style( 'new_style' );
 
 		$this->id = 'paymento_gateway';
-		$this->icon = PAYMENTOGW_URL.'assets/images/Paymento_Logo-03.webp';
+		$this->icon = PAYMENTOGW_URL.'assets/images/paymento-badge.png';
 		$this->has_fields = true;
-		$this->method_title = __('Paymento Crypto gateway', 'paymento');
-		$this->method_description = __('Paymento electronic payment gateway for Woocommerce', 'paymento');
+		$this->method_title = __('Paymento', 'paymento');
+		$this->method_description = __('Paymento non-custodial crypto payment gateway for Woocommerce', 'paymento');
 
 		// Load the settings.
 		$this->init_form_fields();
@@ -518,7 +512,7 @@ function paymento_custom_admin_js()
 				// 'description' => __('merchant confirmation type', 'paymento'),
 				'type' => 'select',
 				'options' => array(
-					'0' => 'Redirect Immediately and Hold Invoice',
+					'0' => 'Redirect Immediately and Hold Invoice (Recommended)',
 					'1' => 'Wait for Payment Confirmation',
         ),
 				'default' => '0'

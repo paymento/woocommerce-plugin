@@ -4,7 +4,7 @@
    Plugin URI: #
    Description: Paymento electronic payment gateway for Woocommerce
    Version: 1.0.0
-   Author: Ali Azarmi
+   Author: Paymento.io
    Author URI: #
    Text Domain: paymento
    Domain Path: /languages
@@ -55,7 +55,7 @@ class PAYMENTO_WC_Main {
 
 		$this->name         = __('PAYMENTO gateway for Woocommerce', 'paymento');
 		$this->description  = __('Paymento electronic payment gateway for Woocommerce', 'paymento');
-		$this->author       = __('Ali Azarmi', 'paymento');
+		$this->author       = __('Paymento Team', 'paymento');
 	}
 
 	/**
