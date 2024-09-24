@@ -1,4 +1,4 @@
-# Paymento Gateway for WooCommerce
+# Paymento Crypto Gateway for WooCommerce
 
 This plugin integrates the Paymento cryptocurrency payment gateway with WooCommerce, allowing store owners to accept cryptocurrency payments easily and securely.
 
