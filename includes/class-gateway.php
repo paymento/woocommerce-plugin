@@ -1,11 +1,5 @@
 <?php
 
-/**
- * Created by PhpStorm.
- * User: Ali Azarmi
- * Date: 6/18/17
- * Time: 7:02 PM
- */
 if (!class_exists('WC_Payment_Gateway')) {
 	return;
 }
@@ -30,10 +24,10 @@ class WC_PAYMENTO_Gateway extends WC_Payment_Gateway {
   	//              wp_enqueue_style( 'new_style' );
 
 		$this->id = 'paymento_gateway';
-		$this->icon = PAYMENTOGW_URL.'assets/images/Paymento_Logo-03.webp';
+		$this->icon = PAYMENTOGW_URL.'assets/images/paymento-badge.png';
 		$this->has_fields = true;
-		$this->method_title = __('Paymento Crypto gateway', 'paymento');
-		$this->method_description = __('Paymento electronic payment gateway for Woocommerce', 'paymento');
+		$this->method_title = __('Paymento', 'paymento');
+		$this->method_description = __('Paymento non-custodial crypto payment gateway for Woocommerce', 'paymento');
 
 		// Load the settings.
 		$this->init_form_fields();
@@ -45,7 +39,7 @@ class WC_PAYMENTO_Gateway extends WC_Payment_Gateway {
 		$this->api_key = $this->get_option('api_key');
 		$this->secret_key = $this->get_option('secret_key');
 		$this->confirmation = $this->get_option('confirmation');
-		$this->debug = $this->get_option('debug');
+		$this->debug = $this->get_option('debug') === 'yes';
 
 		
 
@@ -183,6 +177,131 @@ function paymento_custom_admin_js()
 			) );
 
 	}
+
+	public static function wk_get_post_callback($request) {
+        $gateway = new self();
+        $headers = $request->get_headers();
+        $body = $request->get_body();
+        $params = $request->get_json_params();
+
+        $gateway->log('Received webhook: Headers: ' . print_r($headers, true));
+        $gateway->log('Received webhook: Body: ' . print_r($body, true));
+        $gateway->log('Received webhook: Params: ' . print_r($params, true));
+
+        if (!$gateway->validate_webhook_signature($body, $headers)) {
+            $gateway->log('Invalid webhook signature');
+            return new WP_REST_Response('Invalid signature', 400);
+        }
+
+        $gateway->process_webhook_payload($params);
+
+        return new WP_REST_Response('Webhook processed successfully', 200);
+    }
+
+    private function validate_webhook_signature($payload, $headers) {
+        if (!isset($headers['x_hmac_sha256_signature'])) {
+            $this->log('Missing HMAC signature in headers');
+            return false;
+        }
+
+        $received_signature = strtolower($headers['x_hmac_sha256_signature'][0]);
+        $expected_signature = strtolower(hash_hmac('sha256', $payload, $this->get_option('secret_key')));
+
+        $this->log('Received signature (lowercase): ' . $received_signature);
+        $this->log('Expected signature (lowercase): ' . $expected_signature);
+
+        return hash_equals($expected_signature, $received_signature);
+    }
+
+    private function process_webhook_payload($result) {
+        $this->log('Processing webhook payload: ' . print_r($result, true));
+
+        if (!isset($result['OrderId']) || !isset($result['OrderStatus'])) {
+            $this->log('Missing required webhook data');
+            return;
+        }
+
+        $order_id = absint($result['OrderId']);
+        $order_status = $result['OrderStatus'];
+
+        $order = wc_get_order($order_id);
+        if (!$order) {
+            $this->log('Order not found: ' . $order_id);
+            return;
+        }
+
+        $this->log('Processing order ' . $order_id . ' with status ' . $order_status);
+
+        switch ($order_status) {
+            case 7: // Paid
+                $this->process_successful_payment($order, $result);
+                break;
+            case 3: // Waiting to confirm
+                $order->update_status('on-hold', __('Payment waiting for confirmation', 'paymento'));
+                break;
+            case 9: // Reject
+                $order->update_status('failed', __('Payment was rejected', 'paymento'));
+                break;
+            default:
+                $this->log('Unhandled order status: ' . $order_status);
+                break;
+        }
+    }
+
+    private function process_successful_payment($order, $result) {
+        $this->log('Processing successful payment for order: ' . $order->get_id());
+        
+        $payment_token = $order->get_meta('paymento-payment-token');
+
+        // Verify the payment
+        $verified = $this->verify_payment($payment_token);
+
+        if ($verified) {
+            $this->log('Payment verified for order: ' . $order->get_id());
+            wc_reduce_stock_levels($order->get_id());
+            $order->payment_complete();
+            $order->add_order_note(__('Payment completed via Paymento webhook', 'paymento'));
+        } else {
+            $this->log('Payment verification failed for order: ' . $order->get_id());
+            $order->update_status('on-hold', __('Payment received but verification failed', 'paymento'));
+        }
+    }
+
+    private function verify_payment($token) {
+        $this->log('Verifying payment for token: ' . $token);
+
+        $payload = array('token' => $token);
+
+        $args = array(
+            'body'    => json_encode($payload),
+            'headers' => array(
+                'Content-Type' => 'application/json',
+                'Api-Key'      => $this->get_option('api_key')
+            )
+        );
+
+        $response = wp_remote_post('https://api.paymento.io/v1/payment/verify', $args);
+
+        if (is_wp_error($response)) {
+            $this->log('Payment verification failed: ' . $response->get_error_message());
+            return false;
+        }
+
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+        $this->log('Payment verification response: ' . print_r($body, true));
+
+        return isset($body['success']) && $body['success'] && isset($body['body']['token']) && $body['body']['token'] === $token;
+    }
+
+    private function log($message) {
+        if ($this->debug) {
+            if (empty($this->logger)) {
+                $this->logger = wc_get_logger();
+            }
+            $this->logger->debug($message, array('source' => 'paymento'));
+        }
+    }
+
 	
 	public static function wk_get_health_callback ($request){
 		$args = array(
@@ -246,13 +365,6 @@ function paymento_custom_admin_js()
 		// return new WP_REST_Response($request);
 	}
 
-	public static function wk_get_post_callback ($request){
-		$headers = getallheaders();
-		do_action( 'paymento_result_action', $request->get_json_params(), $headers);
-		return new WP_REST_Response('good');
-	}
-
-	
 	public function paymento_result_action_callback($result, $headers) {
 		//"{\"Token\":\"fe3024f2b7f64b24ad822bca22341e70\",\"PaymentId\":244,\"OrderId\":\"957\",\"OrderStatus\":3,\"AdditionalData\":[]}"
 
@@ -400,17 +512,18 @@ function paymento_custom_admin_js()
 				// 'description' => __('merchant confirmation type', 'paymento'),
 				'type' => 'select',
 				'options' => array(
-					'0' => 'Redirect Immediately and Hold Invoice',
+					'0' => 'Redirect Immediately and Hold Invoice (Recommended)',
 					'1' => 'Wait for Payment Confirmation',
-					'2' => 'Accept Payment in Mempool'
         ),
 				'default' => '0'
 			),
 			'debug' => array(
-				'title' => __('debug', 'paymento'),
-				'type' => 'text',
-				'description' => __('merchant responses', 'paymento'),
-			),
+                'title'       => __('Debug Log', 'paymento'),
+                'type'        => 'checkbox',
+                'label'       => __('Enable logging', 'paymento'),
+                'default'     => 'no',
+                'description' => __('Log Paymento events, such as webhook requests', 'paymento'),
+            ),
 		);
 	}
 
@@ -511,7 +624,7 @@ function paymento_custom_admin_js()
 				$OrderStatus = isset($_REQUEST['status']) ? $_REQUEST['status'] : '';
 				$payment_token = get_post_meta( $order_id, 'paymento-payment-token', true );
 
-				if( $OrderStatus == 7 && ( $confirmation_type == 1 ||  $confirmation_type == 2) ) {
+				if( $OrderStatus == 7 && ( $confirmation_type == 1) ) {
 					// BOOM! Payment completed!
 						// wc_reduce_stock_levels($order_id);
 						WC()->cart->empty_cart();
@@ -600,45 +713,6 @@ function paymento_custom_admin_js()
 		return $available_gateways;
 	}
 
-	public static function computeHexStringHmac($message, $hexStringKey)
-	{
-			if (empty($key)) {
-					throw new \InvalidArgumentException('$key cannot be null or empty');
-			}
-
-			if (empty($message)) {
-					throw new \InvalidArgumentException('$message cannot be null or empty');
-			}
-
-			$hexStringKey = "";
-
-			// Valid hex pattern including 0x prefix
-			if (preg_match("/^(0x)?[0-9A-Fa-f]*$/", $key)) {
-					$hexStringKey = $key;
-			} elseif (preg_match("/^[A-Za-z0-9+\/]*={0,2}$/", $key)) {
-					// Convert base64 to hex (assuming you have a function to handle this)
-					$hexStringKey = self::base64ToHex($key);
-			} else {
-					throw new \InvalidArgumentException("Key is not a valid hex string or base64 format.");
-			}
-
-			if (substr($hexStringKey, 0, 2) === "0x") {
-					$hexStringKey = substr($hexStringKey, 2);
-			}
-
-			// Convert hex string key to byte array
-			$keyBytes = [];
-			for ($i = 0; $i < strlen($hexStringKey) / 2; $i++) {
-					$keyBytes[$i] = hexdec(substr($hexStringKey, $i * 2, 2));
-			}
-
-			$messageBytes = utf8_encode($message);
-
-			$hmac = hash_hmac('sha256', $messageBytes, pack('C*', ...$keyBytes), true);
-
-			return bin2hex($hmac);
-
-	}
 
 }
 
