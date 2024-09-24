@@ -520,7 +520,6 @@ function paymento_custom_admin_js()
 				'options' => array(
 					'0' => 'Redirect Immediately and Hold Invoice',
 					'1' => 'Wait for Payment Confirmation',
-					'2' => 'Accept Payment in Mempool'
         ),
 				'default' => '0'
 			),
@@ -631,7 +630,7 @@ function paymento_custom_admin_js()
 				$OrderStatus = isset($_REQUEST['status']) ? $_REQUEST['status'] : '';
 				$payment_token = get_post_meta( $order_id, 'paymento-payment-token', true );
 
-				if( $OrderStatus == 7 && ( $confirmation_type == 1 ||  $confirmation_type == 2) ) {
+				if( $OrderStatus == 7 && ( $confirmation_type == 1) ) {
 					// BOOM! Payment completed!
 						// wc_reduce_stock_levels($order_id);
 						WC()->cart->empty_cart();
