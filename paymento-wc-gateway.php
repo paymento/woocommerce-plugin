@@ -1,11 +1,11 @@
 <?php
 /*
-   Plugin name: Paymento gateway for Woocommerce
-   Plugin URI: #
-   Description: Paymento electronic payment gateway for Woocommerce
+   Plugin name: Paymento – Non-Custodial Crypto Payment Gateway for WooCommerce  
+   Plugin URI: https://github.com/paymento/paymento-woocommerce-plugin
+   Description: Accept Bitcoin, Ethereum, USDT, and more directly into your wallet with Paymento! A secure, non-custodial crypto payment gateway for WooCommerce—no intermediaries, no hidden fees. 
    Version: 1.0.0
    Author: Paymento.io
-   Author URI: #
+   Author URI: https://paymento.io
    Text Domain: paymento
    Domain Path: /languages
 */
