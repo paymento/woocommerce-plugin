@@ -20,8 +20,6 @@ class WC_PAYMENTO_Gateway extends WC_Payment_Gateway {
 
 	public function __construct()
 	{
-		//    		wp_register_style( 'new_style', PAYMENTOGW_URL.'assets/css/style.css', array(), '1.0.0', true);
-  	//              wp_enqueue_style( 'new_style' );
 
 		$this->id = 'paymento_gateway';
 		$this->icon = PAYMENTOGW_URL.'assets/images/paymento-badge.png';
@@ -58,16 +56,7 @@ class WC_PAYMENTO_Gateway extends WC_Payment_Gateway {
 		add_action('admin_footer',  array($this,'paymento_custom_admin_js'));
 	}
 
-// 	function register_shipped_order_status() {
-//     register_post_status( 'wc-waiting-to-confirm', array(
-//         'label'                     => 'Waiting To Confirm',
-//         'public'                    => true,
-//         'exclude_from_search'       => false,
-//         'show_in_admin_all_list'    => true,
-//         'show_in_admin_status_list' => true,
-//         'label_count'               => _n_noop( 'Waiting To Confirm <span class="count">(%s)</span>', 'Waiting To Confirm <span class="count">(%s)</span>' )
-//     ) );
-// }
+
 
 function paymento_custom_admin_js()
 {
@@ -78,8 +67,7 @@ function paymento_custom_admin_js()
       <script type="text/javascript">
         jQuery(function($) {
 					var data = {
-						'Api-Key' :  '<?php echo $this->get_option('api_key') ?>',
-					};
+						'Api-Key' :  '<?php echo esc_attr($this->get_option('api_key')); ?>',					};
 					var paymento_helth_check = document.getElementById("paymento_helth_check");
 					var req = $.get({
 						url : '/wp-json/paymento/health', 
@@ -105,9 +93,9 @@ function paymento_custom_admin_js()
 						url : '/wp-json/paymento/merchant', 
 						data,
 						headers: {
-							'Api-Key' :  '<?php echo $this->get_option('api_key') ?>',
+							'Api-Key' :  '<?php echo esc_attr($this->get_option('api_key')); ?>',
 							'Content-Type': 'application/json',
-            },
+						},
 						error: function(XMLHttpRequest, textStatus, errorThrown){
 							paymento_merchant_name.innerHTML = '<span style="padding:5px 10px; background-color:#f52f57; color:#fff;border-radius:5px;">Error</span>';
 						},
@@ -152,11 +140,6 @@ function paymento_custom_admin_js()
 
     <?php
 }
-
-// function custom_order_status( $order_statuses ) {
-//     $order_statuses['wc-waiting-to-confirm'] = _x( 'Waiting To Confirm', 'Order status', 'woocommerce' ); 
-//     return $order_statuses;
-// }
 
 	public static	function wk_register_custom_routes() {
 
@@ -267,31 +250,35 @@ function paymento_custom_admin_js()
         }
     }
 
-    private function verify_payment($token) {
-        $this->log('Verifying payment for token: ' . $token);
-
-        $payload = array('token' => $token);
-
-        $args = array(
-            'body'    => json_encode($payload),
-            'headers' => array(
-                'Content-Type' => 'application/json',
-                'Api-Key'      => $this->get_option('api_key')
-            )
-        );
-
-        $response = wp_remote_post('https://api.paymento.io/v1/payment/verify', $args);
-
-        if (is_wp_error($response)) {
-            $this->log('Payment verification failed: ' . $response->get_error_message());
-            return false;
-        }
-
-        $body = json_decode(wp_remote_retrieve_body($response), true);
-        $this->log('Payment verification response: ' . print_r($body, true));
-
-        return isset($body['success']) && $body['success'] && isset($body['body']['token']) && $body['body']['token'] === $token;
-    }
+	private function verify_payment($token) {
+		$this->log('Verifying payment for token: ' . $token);
+	
+		$args = array(
+			'body' => json_encode(array('token' => $token)),
+			'headers' => array(
+				'Content-Type' => 'application/json',
+				'Api-Key' => $this->get_option('api_key')
+			),
+			'timeout' => 30
+		);
+	
+		$response = wp_remote_post('https://api.paymento.io/v1/payment/verify', $args);
+	
+		if (is_wp_error($response)) {
+			$this->log('Payment verification failed: ' . $response->get_error_message());
+			return false;
+		}
+	
+		$body = wp_remote_retrieve_body($response);
+		$result = json_decode($body, true);
+		
+		$this->log('Payment verification response: ' . print_r($result, true));
+		
+		return isset($result['success']) && 
+			   $result['success'] && 
+			   isset($result['body']['token']) && 
+			   $result['body']['token'] === $token;
+	}
 
     private function log($message) {
         if ($this->debug) {
@@ -362,14 +349,9 @@ function paymento_custom_admin_js()
 		// }
 		return new WP_REST_Response(json_decode($response['body']));
 
-		// return new WP_REST_Response($request);
 	}
 
 	public function paymento_result_action_callback($result, $headers) {
-		//"{\"Token\":\"fe3024f2b7f64b24ad822bca22341e70\",\"PaymentId\":244,\"OrderId\":\"957\",\"OrderStatus\":3,\"AdditionalData\":[]}"
-
-
-
 		if ( isset($result['OrderId']) ) {
 			$order_id = absint( $result['OrderId'] );
 		}
@@ -388,31 +370,37 @@ function paymento_custom_admin_js()
 					$payment_token = get_post_meta( $order_id, 'paymento-payment-token', true );
 
 					$payload = array(
-						'token' 	=> $payment_token,
+						'token' => $payment_token,
 					);
-
-					$curl = curl_init();
-					curl_setopt($curl, CURLOPT_URL, 'https://api.paymento.io/v1/payment/verify');
-					curl_setopt($curl, CURLOPT_POSTFIELDS, json_encode($payload));
-					curl_setopt($curl, CURLOPT_HTTPHEADER, array(
-						'Content-Type: application/json',
-						'Api-Key:' . $this->get_option('api_key'))
-					);
-					curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-					curl_setopt($curl, CURLINFO_HEADER_OUT, true);
-					curl_setopt($curl, CURLOPT_POST, true);
 					
-					$curl_res = curl_exec($curl);
-					$result = json_decode($curl_res,true);
+					$args = array(
+						'body' => json_encode($payload),
+						'headers' => array(
+							'Content-Type' => 'application/json',
+							'Api-Key' => $this->get_option('api_key')
+						),
+						'timeout' => 30
+					);
+					
+					$response = wp_remote_post('https://api.paymento.io/v1/payment/verify', $args);
+					
+					if (is_wp_error($response)) {
+						// Translators: %1$s is the error message.
+						$message = sprintf(__('Payment Verification failed: %1$s', 'paymento'), $response->get_error_message());
+						$order->add_order_note($message, 1);
+						wc_add_notice(__('Payment error:', 'paymento') . $message, 'error');
+						wp_redirect(wc_get_checkout_url(), 301);
+						return new WP_REST_Response('error');
+					}
+					
+					$body = wp_remote_retrieve_body($response);
+					$result = json_decode($body, true);
 					
 					if($result["success"] && $result["body"]["token"] == $payment_token){
 						// $this->update_option( 'debug', 'verify result: true' . $order_id);
 						wc_reduce_stock_levels($order_id);
-						$message = sprintf(
-							__('call: Payment was successful %s token: %s', 'paymento'),
-							'<br />',
-							$payment_token
-							);
+						// Translators: %1$s is a line break, %2$s is the payment token.
+						$message = sprintf(__('call: Payment was successful %1$s token: %2$s', 'paymento'),'<br />', $payment_token);
 						$order->add_order_note($message, 1);
 						$order->add_payment_token($payment_token);
 						$order->update_status( 'processing' );
@@ -497,16 +485,6 @@ function paymento_custom_admin_js()
 				'type' => 'text',
 				'description' => __('merchant secret key', 'paymento'),
 			),
-			// 'speed' => array(
-			// 	'title' => __('speed', 'paymento'),
-			// 	'description' => __('merchant speed', 'paymento'),
-			// 	'type' => 'select',
-			// 	'options' => array(
-      //       '1' => 'High',
-      //       '0' => 'Low',
-      //   ),
-			// 	'default' => '0'
-			// ),
 			'confirmation' => array(
 				'title' => __('Confirmation Type', 'paymento'),
 				// 'description' => __('merchant confirmation type', 'paymento'),
@@ -560,41 +538,42 @@ function paymento_custom_admin_js()
 		}
 
 		$payload = array(
-			"fiatAmount"=> $total,
-			"fiatCurrency"=> $currency,
+			"fiatAmount" => $total,
+			"fiatCurrency" => $currency,
 			"ReturnUrl" => $callback_url,
 			"orderId" => $order_id,
 			"speed" => ($confirmation == 1) ? 0 : 1,
 			"cryptoAmount" => array(),
 			"additionalData" => array()
 		);
-
-		$curl = curl_init();
-		curl_setopt($curl, CURLOPT_URL, 'https://api.paymento.io/v1/payment/request');
-		curl_setopt($curl, CURLOPT_POSTFIELDS, json_encode($payload));
-		curl_setopt($curl, CURLOPT_HTTPHEADER, array(
-			'Content-Type: application/json',
-			'Api-Key:' . $this->get_option('api_key'))
+		
+		$args = array(
+			'body' => wp_json_encode($payload),
+			'headers' => array(
+				'Content-Type' => 'application/json',
+				'Api-Key' => esc_attr($this->get_option('api_key'))
+			),
+			'timeout' => 30
 		);
-		curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-		curl_setopt($curl, CURLINFO_HEADER_OUT, true);
-		curl_setopt($curl, CURLOPT_POST, true);
 		
-		$curl_res = curl_exec($curl);
+		$response = wp_remote_post('https://api.paymento.io/v1/payment/request', $args);
 		
-		// $this->update_option( 'debug', 'get payment token: ' . $curl_res);
-
-
-		$result = json_decode($curl_res,true);
-		// $this->update_option( 'debug', $callback_url);
+		if (is_wp_error($response)) {
+			// Handle error
+			$error_message = esc_html($response->get_error_message());
+			throw new Exception(esc_html($error_message));
+		}
 		
-		$order = wc_get_order( $order_id );
-		$order->update_meta_data( 'paymento-payment-token', $result['body'] );
+		$body = wp_remote_retrieve_body($response);
+		$result = json_decode($body, true);
+		
+		$order = wc_get_order($order_id);
+		$order->update_meta_data('paymento-payment-token', esc_html($result['body']));
 		$order->save();
-		$send_to_bank_url = add_query_arg('token' , $result['body'], 'https://app.paymento.io/gateway');
-
 		
+		$send_to_bank_url = add_query_arg('token', esc_html($result['body']), 'https://app.paymento.io/gateway');
 		wp_redirect($send_to_bank_url, 301);
+		exit;
 	}
 	
 	/**
@@ -602,14 +581,12 @@ function paymento_custom_admin_js()
 	 */
 	public function send_to_bank($order_id)
 	{
-		_e('Thank you for your payment. redirecting to bank...', 'paymento');
+		esc_html_e('Thank you for your payment. redirecting to bank...', 'paymento');
 		$this->get_payment_token($order_id);
 	}
 
 	public function return_from_bank() {
 
-		//{"wc_order":"788","token":"33d5dea154364656ac68af4a2a6ff007","orderId":"788","status":"7","woocommerce-login-nonce":null,"_wpnonce":null,"woocommerce-reset-password-nonce":null}
-		// $this->update_option( 'debug', 'rfb: ' . json_encode($_REQUEST));
 		if ( isset($_GET['wc_order']) ) {
 			$order_id = absint( $_GET['wc_order'] );
 		}
@@ -626,14 +603,10 @@ function paymento_custom_admin_js()
 
 				if( $OrderStatus == 7 && ( $confirmation_type == 1) ) {
 					// BOOM! Payment completed!
-						// wc_reduce_stock_levels($order_id);
 						WC()->cart->empty_cart();
 						WC()->session->delete_session( 'paymento_order_id' );
-						$message = sprintf(
-							__('rfb: Payment was successful %s token: %s', 'paymento'),
-							'<br />',
-							$payment_token
-						);
+						// Translators: %1$s is the order ID, %2$s is the payment status.
+						$message = sprintf(__('Order ID: %1$s, Payment Status: %2$s', 'paymento'), $order_id, $payment_status);
 						$order->add_payment_token($payment_token);
 						$order->add_order_note($message, 1);
 						$order->payment_complete();
@@ -643,18 +616,13 @@ function paymento_custom_admin_js()
 				}
 				elseif( $OrderStatus == 7 && $confirmation_type == 0 ) {
 					// BOOM! Payment completed!
-						// wc_reduce_stock_levels($order_id);
 						WC()->cart->empty_cart();
 						WC()->session->delete_session( 'paymento_order_id' );
-						$message = sprintf(
-							__('rfb: Payment was successful %s token: %s', 'paymento'),
-							'<br />',
-							$payment_token
-						);
+						// Translators: %1$s is the payment token.
+						$message = sprintf(__('Payment token: %1$s', 'paymento'),$payment_token);
 						$order->add_payment_token($payment_token);
 						$order->add_order_note($message, 1);
 						$order->payment_complete();
-						// $order->set_status( 'on-hold', 'Waiting for Gateway Confirmation' );
 
 						$order->update_status( 'on-hold' );
 						$successful_page = add_query_arg( 'wc_status', 'success', $this->get_return_url( $order ) );
