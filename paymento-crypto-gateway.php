@@ -6,11 +6,11 @@
    Version: 1.0.0
    Author: Paymento.io
    Author URI: https://paymento.io
-   Text Domain: paymento
+   Text Domain: paymento-crypto-gateway
    Domain Path: /languages
    License: GPL-2.0-or-later
    License URI: https://www.gnu.org/licenses/gpl-2.0.html
-
+   Requires Plugins: woocommerce
 */
 
 /**
@@ -19,6 +19,11 @@
  * @class PAYMENTO_WC_Main
  * @version	1.0.0
  */
+
+ if ( ! defined( 'ABSPATH' ) ) {
+    exit; // Exit if accessed directly
+}
+
 class PAYMENTO_WC_Main {
 
 	/**
@@ -56,9 +61,9 @@ class PAYMENTO_WC_Main {
 		//$this->includes();
 		$this->init_hooks();
 
-		$this->name         = __('PAYMENTO gateway for Woocommerce', 'paymento');
-		$this->description  = __('Paymento electronic payment gateway for Woocommerce', 'paymento');
-		$this->author       = __('Paymento Team', 'paymento');
+		$this->name         = __('PAYMENTO gateway for Woocommerce', 'paymento-crypto-gateway');
+		$this->description  = __('Paymento electronic payment gateway for Woocommerce', 'paymento-crypto-gateway');
+		$this->author       = __('Paymento Team', 'paymento-crypto-gateway');
 	}
 
 	/**
@@ -68,14 +73,6 @@ class PAYMENTO_WC_Main {
 		add_action( 'plugins_loaded', array( $this, 'localization' ) );
 		add_action( 'plugins_loaded', array( $this, 'includes' ) );
 		add_filter( 'woocommerce_payment_gateways', array( $this, 'add_gateway' ) );
-	}
-
-	/**
-	 * Make plugin translatable
-	 */
-	public function localization() {
-		$plugin_rel_path = plugin_basename(PAYMENTOGW_PATH).'/languages';
-		load_plugin_textdomain('paymento', false, $plugin_rel_path);
 	}
 
 	/**
@@ -127,6 +124,12 @@ class PAYMENTO_WC_Main {
 		}
 	}
 
+	/* Make plugin translatable
+	*/
+   public function localization() {
+	   $plugin_rel_path = plugin_basename(PAYMENTOGW_PATH).'/languages';
+	   load_plugin_textdomain('paymento-crypto-gateway', false, $plugin_rel_path);
+   }
 	/**
 	 * Include required core files used in admin and on the frontend.
 	 */
@@ -139,7 +142,7 @@ class PAYMENTO_WC_Main {
 	}
 
 }
-function get_instance_paymento_gateway() {
+function paymento_gateway_get_instance() {
 	return PAYMENTO_WC_Main::instance();
 }
-get_instance_paymento_gateway();
+paymento_gateway_get_instance();

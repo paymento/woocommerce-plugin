@@ -1,4 +1,11 @@
 <?php
+if ( ! defined( 'ABSPATH' ) ) {
+    exit; // Exit if accessed directly
+}
+
+if ( ! defined( 'PAYMENTOGW_URL' ) ) {
+    define( 'PAYMENTOGW_URL', plugin_dir_url(dirname(__FILE__)) ); // Correct path
+}
 
 if (!class_exists('WC_Payment_Gateway')) {
 	return;
@@ -24,8 +31,8 @@ class WC_PAYMENTO_Gateway extends WC_Payment_Gateway {
 		$this->id = 'paymento_gateway';
 		$this->icon = PAYMENTOGW_URL.'assets/images/paymento-badge.png';
 		$this->has_fields = true;
-		$this->method_title = __('Paymento', 'paymento');
-		$this->method_description = __('Paymento non-custodial crypto payment gateway for Woocommerce', 'paymento');
+		$this->method_title = __('Paymento', 'paymento-crypto-gateway');
+		$this->method_description = __('Paymento non-custodial crypto payment gateway for Woocommerce', 'paymento-crypto-gateway');
 
 		// Load the settings.
 		$this->init_form_fields();
@@ -53,93 +60,31 @@ class WC_PAYMENTO_Gateway extends WC_Payment_Gateway {
 		// add_action( 'init', array($this,'register_shipped_order_status') );
 		// add_filter( 'wc_order_statuses', array($this,'custom_order_status'));
 
-		add_action('admin_footer',  array($this,'paymento_custom_admin_js'));
+		//add_action('admin_footer',  array($this,'paymento_custom_admin_js'));
+		add_action('admin_enqueue_scripts', array($this, 'paymento_admin_enqueue'));
+
 	}
 
 
 
-function paymento_custom_admin_js()
-{
-    ?>
-      <style>
-      </style>
-
-      <script type="text/javascript">
-        jQuery(function($) {
-					var data = {
-						'Api-Key' :  '<?php echo esc_attr($this->get_option('api_key')); ?>',					};
-					var paymento_helth_check = document.getElementById("paymento_helth_check");
-					var req = $.get({
-						url : '/wp-json/paymento/health', 
-						data,
-						headers: {
-							'Content-Type': 'application/json',
-							'Access-Control-Allow-Origin' : '*',
-							'Access-Control-Allow-Credentials': 'true'
-            },
-						error: function(XMLHttpRequest, textStatus, errorThrown){
-							paymento_helth_check.innerHTML = '<span style="padding:5px 10px; background-color:#f52f57; color:#fff;border-radius:5px;">Error</span>';
-						},
-						success:  function(response) {
-							if(response.success)
-								paymento_helth_check.innerHTML = '<span style="padding:5px 10px; background-color:#83f28f;border-radius:5px;">Good</span>';
-							else
-								paymento_helth_check.innerHTML = '<span style="padding:5px 10px; background-color:#f52f57;color:#fff;border-radius:5px;">Bad</span>';
-						}
-					});
-
-					var paymento_merchant_name = document.getElementById("paymento_merchant_name");
-					var req2 = $.get({
-						url : '/wp-json/paymento/merchant', 
-						data,
-						headers: {
-							'Api-Key' :  '<?php echo esc_attr($this->get_option('api_key')); ?>',
-							'Content-Type': 'application/json',
-						},
-						error: function(XMLHttpRequest, textStatus, errorThrown){
-							paymento_merchant_name.innerHTML = '<span style="padding:5px 10px; background-color:#f52f57; color:#fff;border-radius:5px;">Error</span>';
-						},
-						success:  function(response) {
-							console.log(response);
-							if(response.success == true){
-								var status = 'Not Active';
-							 if(response.body.isActive)
-								 status = 'Active';
-								 // paymento_merchant_name.innerHTML = '<span style="padding:5px 10px; background-color:#83f28f;border-radius:5px;">' + response.body.name + '( ' + (response.body.isActive) ? 'active' : 'not active' + ' )' + '</span>';
-								 paymento_merchant_name.innerHTML = '<span style="padding:5px 10px; background-color:#83f28f;border-radius:5px;">' + response.body.name  + ' (' + status  + ') </span>';
-							}
-							else
-								paymento_merchant_name.innerHTML = '<span style="padding:5px 10px; background-color:#f52f57;color:#fff;border-radius:5px;">Bad</span>';
-						}
-					});
-			
-					var handle_description = (data) => {
-						var desc_to_change = document.getElementById("woocommerce_paymento_gateway_confirmation_description");
-						if(data == 0)
-								desc_to_change.innerHTML = '</br>Users will be redirected to your site immediately after making the payment. The invoice status will be set to "On Hold" until the transaction is confirmed. ';
-							else if(data == 1)
-								desc_to_change.innerHTML = '</br>Users will remain on the Paymento page until the transaction is confirmed. They will be redirected to your site once the payment is verified. ';
-							else if(data == 2)
-								desc_to_change.innerHTML = '</br>Users will be redirected to your site immediately after making the payment. The invoice status will be marked as "Paid" once the transaction is broadcasted before confirmation.';
-							else
-								desc_to_change.innerHTML = 'else';   
-					}
-
-					var x = document.getElementById("woocommerce_paymento_gateway_confirmation").parentElement;
-					x.innerHTML += '<div id="woocommerce_paymento_gateway_confirmation_description" style="width: 50%;text-align: justify;"></div>';
-					var data= $('select#woocommerce_paymento_gateway_confirmation').val();
-					handle_description(data); 
-
-					$('select#woocommerce_paymento_gateway_confirmation').change(function(){
-						var data= $(this).val();
-						handle_description(data); 
-					});
-        });
-    </script>
-
-
-    <?php
-}
+	function paymento_admin_enqueue($hook) {
+		if ($hook !== 'woocommerce_page_wc-settings') return;
+	
+		wp_enqueue_script(
+			'paymento-admin-js',
+			PAYMENTOGW_URL . 'assets/js/paymento.js',
+			array('jquery'),
+			'1.1.7',
+			true
+		);
+	
+		// Ensure 'paymento_vars' is passed properly
+		wp_localize_script('paymento-admin-js', 'paymento_vars', array(
+			'api_key'  => esc_attr($this->get_option('api_key')),
+			'rest_url' => esc_url(get_rest_url()),
+		));
+	}	
+	
 
 	public static	function wk_register_custom_routes() {
 
@@ -147,17 +92,17 @@ function paymento_custom_admin_js()
 			'methods' => 'GET',
 			'callback' => array(__CLASS__,'wk_get_health_callback') ,
 			'permission_callback' => '__return_true'
-			) );
-			register_rest_route( 'paymento', '/merchant', array(
+			));
+			register_rest_route('paymento', '/merchant', array(
 				'methods' => 'GET',
-				'callback' => array(__CLASS__,'wk_get_merchant_callback') ,
-				'permission_callback' => '__return_true'
-				) );
-		register_rest_route( 'paymento', '/result', array(
+				'callback' => array(__CLASS__, 'wk_get_merchant_callback'),
+				'permission_callback' => '__return_true',
+			));
+		register_rest_route('paymento', '/result', array(
 			'methods' => 'POST',
-			'callback' => array(__CLASS__,'wk_get_post_callback') ,
-			'permission_callback' => '__return_true'
-			) );
+			'callback' => array(__CLASS__, 'wk_get_post_callback'),
+			'permission_callback' => '__return_true', // Keep this open since signature validation is inside the function
+			));
 
 	}
 
@@ -166,10 +111,6 @@ function paymento_custom_admin_js()
         $headers = $request->get_headers();
         $body = $request->get_body();
         $params = $request->get_json_params();
-
-        $gateway->log('Received webhook: Headers: ' . print_r($headers, true));
-        $gateway->log('Received webhook: Body: ' . print_r($body, true));
-        $gateway->log('Received webhook: Params: ' . print_r($params, true));
 
         if (!$gateway->validate_webhook_signature($body, $headers)) {
             $gateway->log('Invalid webhook signature');
@@ -197,7 +138,6 @@ function paymento_custom_admin_js()
     }
 
     private function process_webhook_payload($result) {
-        $this->log('Processing webhook payload: ' . print_r($result, true));
 
         if (!isset($result['OrderId']) || !isset($result['OrderStatus'])) {
             $this->log('Missing required webhook data');
@@ -220,10 +160,10 @@ function paymento_custom_admin_js()
                 $this->process_successful_payment($order, $result);
                 break;
             case 3: // Waiting to confirm
-                $order->update_status('on-hold', __('Payment waiting for confirmation', 'paymento'));
+                $order->update_status('on-hold', __('Payment waiting for confirmation', 'paymento-crypto-gateway'));
                 break;
             case 9: // Reject
-                $order->update_status('failed', __('Payment was rejected', 'paymento'));
+                $order->update_status('failed', __('Payment was rejected', 'paymento-crypto-gateway'));
                 break;
             default:
                 $this->log('Unhandled order status: ' . $order_status);
@@ -243,10 +183,10 @@ function paymento_custom_admin_js()
             $this->log('Payment verified for order: ' . $order->get_id());
             wc_reduce_stock_levels($order->get_id());
             $order->payment_complete();
-            $order->add_order_note(__('Payment completed via Paymento webhook', 'paymento'));
+            $order->add_order_note(__('Payment completed via Paymento webhook', 'paymento-crypto-gateway'));
         } else {
             $this->log('Payment verification failed for order: ' . $order->get_id());
-            $order->update_status('on-hold', __('Payment received but verification failed', 'paymento'));
+            $order->update_status('on-hold', __('Payment received but verification failed', 'paymento-crypto-gateway'));
         }
     }
 
@@ -272,7 +212,6 @@ function paymento_custom_admin_js()
 		$body = wp_remote_retrieve_body($response);
 		$result = json_decode($body, true);
 		
-		$this->log('Payment verification response: ' . print_r($result, true));
 		
 		return isset($result['success']) && 
 			   $result['success'] && 
@@ -308,48 +247,68 @@ function paymento_custom_admin_js()
 			'sslverify' => false,
 		);
 		
-		$response = wp_remote_get( 'https://api.paymento.io/v1/ping/', $args );
-		return new WP_REST_Response(json_decode($response['body']));
+		$response = wp_remote_get('https://api.paymento.io/v1/ping/', $args);
+
+		if (is_wp_error($response)) {
+			return new WP_REST_Response(array('error' => $response->get_error_message()), 500);
+		}
+
+		$body = wp_remote_retrieve_body($response);
+		return new WP_REST_Response(json_decode($body, true));
 	}
 
-	public static function wk_get_merchant_callback ($request){
-		
-		$headers = getallheaders();
-
+	public static function wk_get_merchant_callback($request) {
+		// Retrieve the API key from headers
+		$api_key = $request->get_header('Api-Key');
+	
+		// Check if API key is provided
+		if (empty($api_key)) {
+			return new WP_REST_Response(array('error' => 'Missing API key'), 401);
+		}
+	
+		// Sanitize the API key
+		$api_key = sanitize_text_field($api_key);
+	
+		// Make the external API request
 		$args = array(
-			// Add a couple of custom HTTP headers
-			'headers'    => array(
+			'headers' => array(
 				'Content-Type' => 'application/json',
-				 'Api-Key'  => $headers['Api-Key'],
+				'Api-Key' => $api_key,
 			),
-		
-			// Skip validating the HTTP servers SSL cert;
 			'sslverify' => false,
 		);
-		
-		$response = wp_remote_get( 'https://api.paymento.io/v1/ping/merchant/', $args );
-		// if($response['body']['body']['isActive']){
-			$body = array(
-				"IPN_Url" =>  get_site_url() . "/wp-json/paymento/result",
-				"IPN_Method" => 1
-			);
-			$setting_args = array(
-				'headers'    => array(
+	
+		$response = wp_remote_get('https://api.paymento.io/v1/ping/merchant/', $args);
+	
+		// Check for errors in the external API request
+		if (is_wp_error($response)) {
+			return new WP_REST_Response(array('error' => 'External API request failed'), 500);
+		}
+	
+		// Decode the response body
+		$body = json_decode($response['body'], true);
+	
+		// Update IPN settings (if needed)
+		$body_settings = array(
+			"IPN_Url" => get_site_url() . "/wp-json/paymento/result",
+			"IPN_Method" => 1
+		);
+	
+		$setting_args = array(
+			'headers' => array(
 				'Content-Type' => 'application/json',
-				 'Api-Key'  => $headers['Api-Key'],
-				),
-				'body' => json_encode($body),
-			
-				// Skip validating the HTTP servers SSL cert;
-				'sslverify' => false,
-			);
-
-			$settings = wp_remote_post( 'https://api.paymento.io/v1/payment/settings/', $setting_args );
-			
-		// }
-		return new WP_REST_Response(json_decode($response['body']));
-
+				'Api-Key' => $api_key,
+			),
+			'body' => json_encode($body_settings),
+			'sslverify' => false,
+		);
+	
+		$settings_response = wp_remote_post('https://api.paymento.io/v1/payment/settings/', $setting_args);
+	
+		// Return the merchant API response
+		return new WP_REST_Response($body);
 	}
+	
 
 	public function paymento_result_action_callback($result, $headers) {
 		if ( isset($result['OrderId']) ) {
@@ -386,9 +345,9 @@ function paymento_custom_admin_js()
 					
 					if (is_wp_error($response)) {
 						// Translators: %1$s is the error message.
-						$message = sprintf(__('Payment Verification failed: %1$s', 'paymento'), $response->get_error_message());
+						$message = sprintf(__('Payment Verification failed: %1$s', 'paymento-crypto-gateway'), $response->get_error_message());
 						$order->add_order_note($message, 1);
-						wc_add_notice(__('Payment error:', 'paymento') . $message, 'error');
+						wc_add_notice(__('Payment error:', 'paymento-crypto-gateway') . $message, 'error');
 						wp_redirect(wc_get_checkout_url(), 301);
 						return new WP_REST_Response('error');
 					}
@@ -400,7 +359,7 @@ function paymento_custom_admin_js()
 						// $this->update_option( 'debug', 'verify result: true' . $order_id);
 						wc_reduce_stock_levels($order_id);
 						// Translators: %1$s is a line break, %2$s is the payment token.
-						$message = sprintf(__('call: Payment was successful %1$s token: %2$s', 'paymento'),'<br />', $payment_token);
+						$message = sprintf(__('call: Payment was successful %1$s token: %2$s', 'paymento-crypto-gateway'),'<br />', $payment_token);
 						$order->add_order_note($message, 1);
 						$order->add_payment_token($payment_token);
 						$order->update_status( 'processing' );
@@ -414,19 +373,19 @@ function paymento_custom_admin_js()
 						
 					}else{			
 						$message = sprintf(
-							__('Payment Verification was unsuccessful.', 'paymento'),
+							__('Payment Verification was unsuccessful.', 'paymento-crypto-gateway'),
 							'<br />',
 							$payment_token
 						);
 						$order->add_order_note($message, 1);
-						wc_add_notice( __('Payment error:', 'paymento') . $message, 'error' );
+						wc_add_notice( __('Payment error:', 'paymento-crypto-gateway') . $message, 'error' );
 						wp_redirect(wc_get_checkout_url(), 301);
 						return new WP_REST_Response('good');
 					}
 				} else {
 					// OOPS! Something wrong
 					$error_message =  "Paymento failed payment";
-					wc_add_notice( __('Payment error:', 'paymento') . $error_message, 'error' );
+					wc_add_notice( __('Payment error:', 'paymento-crypto-gateway') . $error_message, 'error' );
 					wp_redirect( wc_get_checkout_url() );
 					return new WP_REST_Response('good');
 				}
@@ -435,8 +394,14 @@ function paymento_custom_admin_js()
 	}
 
 	public function register_script() {
-		wp_register_style( 'new_style', PAYMENTOGW_URL.'assets/css/style.css', array(), '1.0.0', true);
-		wp_enqueue_style( 'new_style' );
+		wp_register_style(
+			'new_style', 
+			PAYMENTOGW_URL . 'assets/css/style.css', 
+			array(), 
+			'1.0.0', 
+			'all'  // Correct media parameter
+		);
+		wp_enqueue_style('new_style');
 	}
 
 	/**
@@ -446,9 +411,9 @@ function paymento_custom_admin_js()
 	{
 		$this->form_fields = array(
 			'enabled' => array(
-				'title' => __('Enable/Disable', 'paymento'),
+				'title' => __('Enable/Disable', 'paymento-crypto-gateway'),
 				'type' => 'checkbox',
-				'label' => __('Enable Paymento Payments', 'paymento'),
+				'label' => __('Enable Paymento Payments', 'paymento-crypto-gateway'),
 				'default' => 'yes',
 			),
 			'status' => array(
@@ -462,31 +427,31 @@ function paymento_custom_admin_js()
 			'description' => sprintf('<span id="paymento_merchant_name">Loading</span>'),
 		),
 			'title' => array(
-				'title' => __('Title', 'paymento'),
+				'title' => __('Title', 'paymento-crypto-gateway'),
 				'type' => 'text',
-				'description' => __('This controls the title which the user sees during checkout.', 'paymento'),
-				'default' => __('paymento gateway for Woocommerce', 'paymento'),
+				'description' => __('This controls the title which the user sees during checkout.', 'paymento-crypto-gateway'),
+				'default' => __('paymento gateway for Woocommerce', 'paymento-crypto-gateway'),
 				'desc_tip' => true,
 			),
 			'description' => array(
-				'title' => __('Description', 'paymento'),
+				'title' => __('Description', 'paymento-crypto-gateway'),
 				'type' => 'text',
-				'description' => __('Payment method description that the customer will see on your checkout.', 'paymento'),
-				'default' => __('Official paymento electronic payment gateway', 'paymento'),
+				'description' => __('Payment method description that the customer will see on your checkout.', 'paymento-crypto-gateway'),
+				'default' => __('Official paymento electronic payment gateway', 'paymento-crypto-gateway'),
 				'desc_tip' => true,
 			),
 			'api_key' => array(
-				'title' => __('API Key', 'paymento'),
+				'title' => __('API Key', 'paymento-crypto-gateway'),
 				'type' => 'text',
-				'description' => __('merchant access token', 'paymento'),
+				'description' => __('merchant access token', 'paymento-crypto-gateway'),
 			),
 			'secret_key' => array(
-				'title' => __('Secret Key', 'paymento'),
+				'title' => __('Secret Key', 'paymento-crypto-gateway'),
 				'type' => 'text',
-				'description' => __('merchant secret key', 'paymento'),
+				'description' => __('merchant secret key', 'paymento-crypto-gateway'),
 			),
 			'confirmation' => array(
-				'title' => __('Confirmation Type', 'paymento'),
+				'title' => __('Confirmation Type', 'paymento-crypto-gateway'),
 				// 'description' => __('merchant confirmation type', 'paymento'),
 				'type' => 'select',
 				'options' => array(
@@ -496,11 +461,11 @@ function paymento_custom_admin_js()
 				'default' => '0'
 			),
 			'debug' => array(
-                'title'       => __('Debug Log', 'paymento'),
+                'title'       => __('Debug Log', 'paymento-crypto-gateway'),
                 'type'        => 'checkbox',
-                'label'       => __('Enable logging', 'paymento'),
+                'label'       => __('Enable logging', 'paymento-crypto-gateway'),
                 'default'     => 'no',
-                'description' => __('Log Paymento events, such as webhook requests', 'paymento'),
+                'description' => __('Log Paymento events, such as webhook requests', 'paymento-crypto-gateway'),
             ),
 		);
 	}
@@ -581,7 +546,7 @@ function paymento_custom_admin_js()
 	 */
 	public function send_to_bank($order_id)
 	{
-		esc_html_e('Thank you for your payment. redirecting to bank...', 'paymento');
+		esc_html_e('Thank you for your payment. redirecting to bank...', 'paymento-crypto-gateway');
 		$this->get_payment_token($order_id);
 	}
 
@@ -596,9 +561,9 @@ function paymento_custom_admin_js()
 			$order = wc_get_order($order_id);
 			if ($order->get_status() !== 'completed' && $order->get_status() !== 'processing') {
 
-				// Get data from bank
-				$OrderId = isset($_REQUEST['OrderId']) ? $_REQUEST['OrderId'] : '';
-				$OrderStatus = isset($_REQUEST['status']) ? $_REQUEST['status'] : '';
+				// Get data from Paymento
+				$OrderId = isset($_REQUEST['OrderId']) ? sanitize_text_field(wp_unslash($_REQUEST['OrderId'])) : '';
+				$OrderStatus = isset($_REQUEST['status']) ? sanitize_text_field(wp_unslash($_REQUEST['status'])) : '';
 				$payment_token = get_post_meta( $order_id, 'paymento-payment-token', true );
 
 				if( $OrderStatus == 7 && ( $confirmation_type == 1) ) {
@@ -606,7 +571,7 @@ function paymento_custom_admin_js()
 						WC()->cart->empty_cart();
 						WC()->session->delete_session( 'paymento_order_id' );
 						// Translators: %1$s is the order ID, %2$s is the payment status.
-						$message = sprintf(__('Order ID: %1$s, Payment Status: %2$s', 'paymento'), $order_id, $payment_status);
+						$message = sprintf(__('Order ID: %1$s, Payment Status: %2$s', 'paymento-crypto-gateway'), $order_id, $payment_status);
 						$order->add_payment_token($payment_token);
 						$order->add_order_note($message, 1);
 						$order->payment_complete();
@@ -619,7 +584,7 @@ function paymento_custom_admin_js()
 						WC()->cart->empty_cart();
 						WC()->session->delete_session( 'paymento_order_id' );
 						// Translators: %1$s is the payment token.
-						$message = sprintf(__('Payment token: %1$s', 'paymento'),$payment_token);
+						$message = sprintf(__('Payment token: %1$s', 'paymento-crypto-gateway'),$payment_token);
 						$order->add_payment_token($payment_token);
 						$order->add_order_note($message, 1);
 						$order->payment_complete();
@@ -631,7 +596,7 @@ function paymento_custom_admin_js()
 				} elseif( $OrderStatus == 3 ) {
 					// BOOM! Payment completed!
 						$message = sprintf(
-							__('rfb: Payment Waiting To Confirm', 'paymento'));
+							__('rfb: Payment Waiting To Confirm', 'paymento-crypto-gateway'));
 						$order->add_payment_token($payment_token);
 						$order->add_order_note($message, 1);
 						$successful_page = add_query_arg( 'wc_status', 'success', $this->get_return_url( $order ) );
@@ -640,7 +605,7 @@ function paymento_custom_admin_js()
 				} else {
 					// OOPS! Something wrong
 					$error_message =  "rfb: Paymento failed payment";
-					wc_add_notice( __('Payment error:', 'paymento') . $error_message, 'error' );
+					wc_add_notice( __('Payment error:', 'paymento-crypto-gateway') . $error_message, 'error' );
 					wp_redirect( wc_get_checkout_url() ,301);
 					exit();
 				}
@@ -655,13 +620,13 @@ function paymento_custom_admin_js()
 	public function get_error_message( $token ) {
 		switch ($token) {
 			case 'soap':
-				return __('SOAP Client does not loaded in your server', 'paymento');
+				return __('SOAP Client does not loaded in your server', 'paymento-crypto-gateway');
 				break;
 			case 'bank_connection':
-				return __('Connection to bank failed.', 'paymento');
+				return __('Connection to bank failed.', 'paymento-crypto-gateway');
 				break;
 			default:
-				return __('Unknown error', 'paymento');
+				return __('Unknown error', 'paymento-crypto-gateway');
 		}
 	}
 
@@ -670,7 +635,7 @@ function paymento_custom_admin_js()
 		if ($gateway === $this->id) {
 			$trace_number = get_post_meta( $order->id, 'paymento_payment_id', true );
 			$total_rows['trace_number'] = array(
-				'label' => __( 'Tracking Code:', 'paymento' ),
+				'label' => __( 'Tracking Code:', 'paymento-crypto-gateway' ),
 				'value' => $trace_number
 			);
 		}
